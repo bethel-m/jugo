@@ -1,0 +1,40 @@
+version: '3.8'
+#sudo docker run -it --rm --network jugo_network --name jugo_app -p 4000:4000 jugo_image
+services:
+  web:
+    depends_on:
+      - database
+    build: 
+      context: .
+    container_name: jugo_app
+    hostname: jugo_app 
+    networks:
+      - jugo_network 
+    ports:
+      - 4000:4000
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  #sudo docker run --name jugo_db --hostname db --network jugo_network -p 5432:5432 -v jugo_volume:/var/lib/postgresql/data -e POSTGRES_PASSWORD=jugo -e POSTGRES_USER=jugo -e POSTGRES_DB=jugo_db postgres
+
+  database:
+    image: postgres
+    container_name: jugo_db
+    hostname: db 
+    networks:
+      - jugo_network
+    ports:
+      - 5432:5432 
+    volumes:
+      - jugo_volume:/var/lib/postgresql/data 
+    environment:
+      - POSTGRES_DB=jugo_db
+      - POSTGRES_USER=jugo
+      - POSTGRES_PASSWORD=jugo
+
+volumes:
+  jugo_volume:
+networks:
+  jugo_network:
+    driver: bridge
