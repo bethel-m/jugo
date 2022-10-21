@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -13,9 +14,45 @@ import (
 
 var client *redis.Client
 
-//unimplemented function
 func retrieveHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "general")
+	if r.Method != http.MethodGet {
+		http.Error(w, "only get method allowed", http.StatusBadRequest)
+		return
+	}
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		fmt.Printf("username error: %v", username)
+		http.Error(w, "empty username field", http.StatusBadRequest)
+		return
+	}
+
+	users_file_path, err_path := retrieveFilePath(db, username)
+	if err_path != nil {
+		http.Error(w, "an error occured while retrieing file path", http.StatusInternalServerError)
+		fmt.Printf("an error occured::%v\n", err_path)
+		return
+	}
+
+	fileBytes, err_read := ioutil.ReadFile(users_file_path)
+	if err_read != nil {
+		fmt.Fprintf(os.Stdout, "retrieveFilePath>>error reading file::%v", err_read)
+		http.Error(w, "an error occured", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(fileBytes)
+	return
+
+	// data, marshal_err := json.Marshal(users_file_path)
+	// if marshal_err != nil {
+	// 	log.Printf("could not marshal json, err: %v", marshal_err)
+	// 	return
+	// }
+	// w.Header().Set("Content-Type", "applications/json")
+	// w.Write(data)
+	// return
+
 }
 
 // this function gets the user from the database
@@ -24,6 +61,7 @@ func getUserHandler(w http.ResponseWriter, r *http.Request) {
 	//allows only get request on this endpoint
 	if r.Method != "GET" {
 		http.Error(w, "cannot perform request,expected GET request", http.StatusMethodNotAllowed)
+		return
 	}
 
 	//get username from the parameters sent in the request
@@ -90,10 +128,10 @@ func storeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// create a directory to store the files the client sends
+	// create a directory in the parent directory to store the files the client sends
 	// if the directory exists skip the creation and use it
 	// send a server error to the client in case of error and return
-	mkdir_err := os.MkdirAll("./uploads", os.ModePerm)
+	mkdir_err := os.MkdirAll("../uploads", os.ModePerm)
 	if mkdir_err != nil {
 		fmt.Fprintf(os.Stdout, "could not make dir uploads ::%v", mkdir_err)
 		http.Error(w, mkdir_err.Error(), http.StatusInternalServerError)
@@ -103,7 +141,7 @@ func storeHandler(w http.ResponseWriter, r *http.Request) {
 	// create a file in the uploads directory with this naming convention "username_filename"
 	// using the username and the filename frpm the request, copy the contents of the sent
 	// file to this file and save it
-	dst, create_err := os.Create(fmt.Sprintf("./uploads/%s_%s", username, handler.Filename))
+	dst, create_err := os.Create(fmt.Sprintf("../uploads/%s_%s", username, handler.Filename))
 	if create_err != nil {
 		fmt.Fprintf(os.Stdout, "could not create file ::%v", create_err)
 		http.Error(w, create_err.Error(), http.StatusInternalServerError)

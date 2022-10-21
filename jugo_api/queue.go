@@ -3,17 +3,28 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"strconv"
 
 	"github.com/go-redis/redis/v9"
 )
 
 func init() {
+	redis_host := os.Getenv("REDIS_HOST")
+	redis_port := os.Getenv("REDIS_PORT")
+	redis_password := os.Getenv("REDIS_PASSWORD")
+	redis_db, conv_err := strconv.Atoi(os.Getenv("REDIS_DB"))
+	if conv_err != nil {
+		log.Fatalf("could not convert redis db to number::%v", conv_err)
+	}
 
+	redis_address := fmt.Sprintf("%v:%v", redis_host, redis_port)
 	ctx := context.Background()
 	client = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
+		Addr:     redis_address,
+		Password: redis_password,
+		DB:       redis_db,
 	})
 
 	pong, err := client.Ping(ctx).Result()

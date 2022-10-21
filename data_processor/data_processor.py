@@ -1,30 +1,73 @@
-from ast import main
 import datetime
+from json import load
 import os
+import sys
 import psycopg2
 import redis
+from dotenv import load_dotenv
+
+
+my_directory = os.getcwd()
+parent_directory = os.path.dirname(my_directory)
+
+# loading environment variables
+env= os.path.join(parent_directory,".env")
+if os.path.exists(env):
+  load_dotenv(env)
+
+# database configurarion variables from .env
+db_host = os.getenv("DB_HOST")
+db_port = os.getenv("DB_PORT")
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
+db_name = os.getenv("DB_NAME")
+
+#redis config variables
+redis_host = os.getenv("REDIS_HOST")
+redis_port = int(os.getenv("REDIS_PORT"))
+redis_db = int(os.getenv("REDIS_DB"))
+print(redis_host,redis_port,redis_db)
+
+# print out psycopg2 errors
+def print_psycopg2_exception(err):
+    # get details about the exception
+    err_type, err_obj, traceback = sys.exc_info()
+
+    # get the line number when exception occured
+    line_num = traceback.tb_lineno
+
+    # print the connect() error
+    print ("\npsycopg2 ERROR:", err, "on line number:", line_num)
+    print ("psycopg2 traceback:", traceback, "-- type:", err_type)
+
+    # psycopg2 extensions.Diagnostics object attribute
+    print ("\nextensions.Diagnostics:", err.diag)
+
+    # print the pgcode and pgerror exceptions
+    print ("pgerror:", err.pgerror)
+    print ("pgcode:", err.pgcode, "\n")
+
 
 #configurations and processes
 try:
-    # create users_files directory if it does not exist
-    # this directory stores individual users files
-
-
 
     #connect to the database
-    r = redis.Redis(decode_responses=True)
-    connection = psycopg2.connect(user="jugo",
-                                  password="jugo",
-                                  host="127.0.0.1",
-                                  port="5432",
-                                  database="jugo_db")
-
+    r = redis.Redis(host=redis_host, port=redis_port, db=0,decode_responses=True)
+    connection = psycopg2.connect(user=db_user,
+                                  password=db_password,
+                                  host=db_host,
+                                  port=db_port,
+                                  database=db_name)
+    print(connection)
     # get cursor to for query
     cursor = connection.cursor()
     print("connected")
-    #this directory contains the temporay files to be appended to the user files
-    temporary_user_files_directory = "/home/bethel/Base/projects/jugo/jugo_api/uploads"
+
+    #temporary_user_files_directory directory contains the temporay files to be appended to the user files
+    #temporary_user_files_directory directory contains the temporay files to be appended to the user files
+    temporary_user_files_directory = parent_directory + "/uploads"
     print("temp")
+    
     # loop to continuesly check redis list(tasks queue),and compare it to the 
     # files in the temporary storage,if it matches ,then read its content, and 
     # add it to the users file
@@ -66,25 +109,24 @@ try:
                 print("error could not open or read file")
 
             #query the database,for the user whose name is gotten from the filename splitted
-            cursor.execute("SELECT name,file_path,last_changed,email FROM users_with_filespath WHERE name=%s",(user,))
+            cursor.execute("SELECT name,file_path,last_changed,email FROM users WHERE name=%s",(user,))
   
             user_query = cursor.fetchone()
             print(user_query)
+
+            #create a directory where permanent users files would be kept
+            # if it does not exist,but if it does skip
+            users_permanent_file_directory = os.path.join(parent_directory,"users_files")
+            if not os.path.exists(users_permanent_file_directory):
+              os.mkdir(users_permanent_file_directory)
+
             #get the file path from the query,if its ""(empty string),create a file using the user's name
-            #and append the content of the temporary file(file from temporary directory with users name)
-            username=user_query[0]
-            user_file_path=user_query[1]
-            main_directory = os.getcwd()
-            if not os.path.exists("../users_files"):
-              os.mkdir("../users_files")
-            print(f"main_directory::{main_directory}")
+            #and append to it the content of the temporary file(file from temporary directory with users name)
+            username=user_query[0] #username from query
+            user_file_path=user_query[1] #user file path from query
             if user_file_path == "":
               user_permanent_file = username + ".txt"
-              os.chdir("../")
-              pwd = os.getcwd()
-              print(pwd)
-              path = os.path.join(pwd,"users_files",user_permanent_file)
-
+              path = os.path.join(users_permanent_file_directory,user_permanent_file)
               with open(path,"x") as f:
                 try:
                   f.write("\n"+contents)
@@ -93,10 +135,9 @@ try:
                 except:
                   print("Could not open or append to user permanent file")
 
-              update_query = """Update users_with_filespath set file_path=%s,last_changed=%s where name=%s"""
+              update_query = """Update users set file_path=%s,last_changed=%s where name=%s"""
               cursor.execute(update_query,(path,datetime.datetime.now(),username))
               connection.commit()
-              os.chdir(main_directory)
               present_directory = os.getcwd()
               print(f"present_directory::{present_directory}")
 
@@ -114,11 +155,17 @@ try:
 
     
 #error while connecting to the database
-except (Exception, psycopg2.Error) as error:
-    print("Error while connecting to PostgreSQL", error)
+except psycopg2.OperationalError as db_error:
+  print_psycopg2_exception(db_error)
+  connection = None
+
+#error connecting to redis
+except redis.exceptions.ConnectionError as redis_error:
+  print("error connecting to redis>>",redis_error)
+
 #close connection when done         
 finally:
-    if connection:
-        cursor.close()
-        connection.close()
-        print("PostgreSQL connection is closed")
+  if connection:
+    cursor.close()
+    connection.close()
+    print("PostgreSQL connection is closed")

@@ -1,0 +1,77 @@
+version: '3.8'
+#sudo docker run --name jugo_api --network jugo_network -p 4000:4000 -v temp_files:/jugo_api/uploads -v permanent_files:/users_files jugo_api
+services:
+  web:
+    env_file:
+      - docker.env
+    stdin_open: true
+    tty: true
+    depends_on:
+      - database
+      - tasks_queue
+      - data_processor 
+    build: 
+      context: ./jugo_api
+    container_name: jugo_api 
+    hostname: jugo_api  
+    ports:
+      - 4000:4000
+    volumes:
+      - temp_files:/uploads
+      - permanent_files:/users_files
+    deploy:
+      restart_policy:
+        condition: on-failure
+    
+  #sudo docker run -it --name processor --network jugo_network -v temp_files:/data_processor/uploads -v permanent_files:/users_files data_processor
+  data_processor:
+    env_file:
+      - docker.env
+    stdin_open: true
+    tty: true
+    depends_on:
+      - database
+      - tasks_queue
+    build:
+      context: ./data_processor
+    container_name: data_processor
+    hostname: data_processor
+    volumes:
+      - temp_files:/uploads 
+      - permanent_files:/users_files 
+    deploy:
+      restart_policy:
+        condition: on-failure
+  
+
+  #sudo docker run -it --name redis_server -p 6379:6379 --hostname redis_db --network jugo_network redis
+  tasks_queue:
+    image: redis
+    container_name : redis_server
+    hostname: redis_db
+    ports:
+      - 6379:6379
+
+
+  #sudo docker run -it --name postgres_server -p 5432:5432 --hostname postgres_db --network jugo_network -v jugo_database:/var/lib/postgresql/data -e POSTGRES_PASSWORD=jugo -e POSTGRES_USER=jugo -e POSTGRES_DB=jugo_db postgres
+
+  database:
+    image: postgres
+    container_name: postgres_server 
+    hostname: postgres_db
+    ports:
+      - 5432:5432 
+    volumes:
+      - jugo_database:/var/lib/postgresql/data 
+
+volumes:
+  jugo_database:
+    external: true 
+  permanent_files:
+    external: true 
+  temp_files:
+    external: true 
+networks:
+  default:
+    name: jugo_network
+    external: true
